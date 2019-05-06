@@ -1,13 +1,12 @@
 #include <ArduinoMqttClient.h>
 #include <WiFi101.h>
 #include "arduino_secrets.h"
-
 #include <typeinfo>
-
 #include <Wire.h>
 #include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <RTCZero.h>
 
 #define BME_SCK 13
 #define BME_MISO 12
@@ -33,12 +32,19 @@ WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
 const char broker[] = MQTT_IP;
-int        port     = MQTT_PORT;
-
-const long interval = 60000;
-unsigned long previousMillis = 0;
+int port = MQTT_PORT;
 
 char *topic;
+
+/* Create an rtc object */
+RTCZero rtc;
+
+const byte hours = 00;
+const byte minutes = 00;
+const byte seconds = 00;
+const byte day = 17;
+const byte month = 05;
+const byte year = 19;
 
 void setup_wifi() {
   // attempt to connect to Wifi network:
@@ -51,10 +57,9 @@ void setup_wifi() {
   }
 
   Serial.println("You're connected to the network");
-  Serial.println();
 }
 
-void setup_mqtt() {
+int setup_mqtt() {
   mqttClient.setId("mkr1000");
   mqttClient.setUsernamePassword(mqtt_user, mqtt_pass);
 
@@ -64,12 +69,11 @@ void setup_mqtt() {
   if (!mqttClient.connect(broker, port)) {
     Serial.print("MQTT connection failed! Error code = ");
     Serial.println(mqttClient.connectError());
-
-    while (1);
+    return mqttClient.connectError();
+    //while (1);
   }
 
   Serial.println("You're connected to the MQTT broker!");
-  Serial.println();
 }
 
 void setup_bme280() {
@@ -101,33 +105,42 @@ void send_metric_mqtt(char *topic, float msg) {
   Serial.println("Sent");
 }
 
+void send_msg_mqtt(char *topic, char *msg) {
+  Serial.println("Sending message");
+  mqttClient.beginMessage(topic);
+  mqttClient.print(msg);
+  mqttClient.endMessage();
+  Serial.println("Sent");
+}
+
 void setup() {
   Serial.begin(9600);
   setup_wifi();
   setup_mqtt();
   setup_bme280();
 
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  rtc.begin();
+  rtc.setTime(hours, minutes, seconds);
+  rtc.setDate(day, month, year);
+  rtc.setAlarmTime(00, 05, 00);
+  rtc.enableAlarm(rtc.MATCH_MMSS);
+
+  rtc.attachInterrupt(alarmMatch);
+  rtc.standbyMode();
 }
 
 void loop() {
-  // call poll() regularly to allow the library to send MQTT keep alives which
-  // avoids being disconnected by the broker
-  mqttClient.poll();
-
-  bme.takeForcedMeasurement();
-  //delay(60000);
-
-  // avoid having delays in loop, we'll use the strategy from BlinkWithoutDelay
-  // see: File -> Examples -> 02.Digital -> BlinkWithoutDelay for more info
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - previousMillis >= interval) {
-    // save the last time a message was sent
-    previousMillis = currentMillis;
+  rtc.standbyMode();
+}
 
 
-    send_metric_mqtt(topic = "tmp", bme.readTemperature());
-    send_metric_mqtt(topic = "hum", bme.readHumidity());
-    send_metric_mqtt(topic = "pre", bme.readPressure() / 100.0F);
-  }
+void alarmMatch()
+{
+  send_metric_mqtt(topic = "tmp", bme.readTemperature());
+  send_metric_mqtt(topic = "hum", bme.readHumidity());
+  send_metric_mqtt(topic = "pre", bme.readPressure() / 100.0F);
+  rtc.setTime(00,00,00);
 }
