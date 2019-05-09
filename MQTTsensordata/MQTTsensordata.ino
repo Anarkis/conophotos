@@ -34,46 +34,91 @@ MqttClient mqttClient(wifiClient);
 const char broker[] = MQTT_IP;
 int port = MQTT_PORT;
 
+const int led_error = 7;
+const int led_mqtt = 1;
+
 char *topic;
 
 /* Create an rtc object */
 RTCZero rtc;
 
-const byte hours = 00;
-const byte minutes = 00;
-const byte seconds = 00;
-const byte day = 17;
-const byte month = 05;
-const byte year = 19;
+const byte hours = 0;
+const byte minutes = 0;
+const byte seconds = 0;
+bool matched = false;
 
-void setup_wifi() {
+void connect_wifi() {
   // attempt to connect to Wifi network:
+//  blink(LED_BUILTIN);
+  WiFi.noLowPowerMode();
   Serial.print("Attempting to connect to WPA SSID: ");
   Serial.println(ssid);
   while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
     // failed, retry
     Serial.print(".");
-    delay(5000);
+    blink(LED_BUILTIN);
   }
-
   Serial.println("You're connected to the network");
+}
+
+void disconnect_wifi(){
+//  blink(LED_BUILTIN);
+  WiFi.disconnect();
+  WiFi.end();
+  Serial.println("Wifi disconnected");
 }
 
 int setup_mqtt() {
   mqttClient.setId("mkr1000");
   mqttClient.setUsernamePassword(mqtt_user, mqtt_pass);
+}
 
-  Serial.print("Attempting to connect to the MQTT broker: ");
-  Serial.println(broker);
-
-  if (!mqttClient.connect(broker, port)) {
-    Serial.print("MQTT connection failed! Error code = ");
-    Serial.println(mqttClient.connectError());
-    return mqttClient.connectError();
-    //while (1);
+boolean connect_mqtt(){
+//  blink(led_mqtt);
+  int attemps = 0;
+  while (attemps < 3 && !mqttClient.connected()) {
+    blink(led_error);
+    mqttClient.connect(broker, port);
+    attemps = attemps + 1;
   }
+  return mqttClient.connected();
+}
 
-  Serial.println("You're connected to the MQTT broker!");
+void disconnect_mqtt(){
+//  blink(led_mqtt);
+  //mqttClient.disconnect();
+}
+
+void send_metric_mqtt(char *topic, float msg) {
+  Serial.println("Sending metric");
+  mqttClient.beginMessage(topic);
+  mqttClient.print(msg);
+  int exit_code = mqttClient.endMessage();
+
+  if (exit_code = 0){
+    Serial.println("Sent");
+    blink(led_mqtt);
+  }
+  else{
+    Serial.println("Error sending the message");
+    blink(led_error);
+  }
+}
+
+void send_msg_mqtt(char *topic, char *msg) {
+  Serial.println("Sending message");
+  mqttClient.beginMessage(topic);
+  mqttClient.print(msg);
+  int exit_code = mqttClient.endMessage();
+  if (exit_code = 0){
+    Serial.println("Sent");
+    blink(led_mqtt);
+  }
+  else{
+    Serial.println("Error sending the message");
+    blink(led_error);
+  }
+  
 }
 
 void setup_bme280() {
@@ -96,36 +141,28 @@ void setup_bme280() {
 
 }
 
-
-void send_metric_mqtt(char *topic, float msg) {
-  Serial.println("Sending message");
-  mqttClient.beginMessage(topic);
-  mqttClient.print(msg);
-  mqttClient.endMessage();
-  Serial.println("Sent");
-}
-
-void send_msg_mqtt(char *topic, char *msg) {
-  Serial.println("Sending message");
-  mqttClient.beginMessage(topic);
-  mqttClient.print(msg);
-  mqttClient.endMessage();
-  Serial.println("Sent");
+void blink(int x){
+  digitalWrite(x, HIGH);
+  delay(1000);
+  digitalWrite(x, LOW);
+  delay(1000);
 }
 
 void setup() {
   Serial.begin(9600);
-  setup_wifi();
   setup_mqtt();
   setup_bme280();
 
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(led_error, OUTPUT);
+  pinMode(led_mqtt, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(led_error, LOW);
+  digitalWrite(led_mqtt, LOW);
 
   rtc.begin();
   rtc.setTime(hours, minutes, seconds);
-  rtc.setDate(day, month, year);
-  rtc.setAlarmTime(00, 05, 00);
+  rtc.setAlarmTime(0, 15, 0);
   rtc.enableAlarm(rtc.MATCH_MMSS);
 
   rtc.attachInterrupt(alarmMatch);
@@ -133,14 +170,30 @@ void setup() {
 }
 
 void loop() {
+  
+  if (matched) {
+      matched = false;
+      blink(LED_BUILTIN);
+      
+      connect_wifi();
+      if (connect_mqtt()){
+        send_metric_mqtt(topic = "tmp", bme.readTemperature());
+      }
+      
+      disconnect_mqtt();
+      disconnect_wifi();
+      
+      rtc.setTime(hours, minutes, seconds);
+  }
+  
   rtc.standbyMode();
 }
 
 
 void alarmMatch()
 {
-  send_metric_mqtt(topic = "tmp", bme.readTemperature());
-  send_metric_mqtt(topic = "hum", bme.readHumidity());
-  send_metric_mqtt(topic = "pre", bme.readPressure() / 100.0F);
-  rtc.setTime(00,00,00);
+  //send_metric_mqtt(topic = "tmp", bme.readTemperature());
+  //send_metric_mqtt(topic = "hum", bme.readHumidity());
+  //send_metric_mqtt(topic = "pre", bme.readPressure() / 100.0F);
+  matched = true;
 }
