@@ -89,36 +89,20 @@ void disconnect_mqtt(){
   //mqttClient.disconnect();
 }
 
-void send_metric_mqtt(char *topic, float msg) {
+int send_metric_mqtt(char *topic, float msg) {
   Serial.println("Sending metric");
   mqttClient.beginMessage(topic);
   mqttClient.print(msg);
-  int exit_code = mqttClient.endMessage();
-
-  if (exit_code = 0){
-    Serial.println("Sent");
-    blink(led_mqtt);
-  }
-  else{
-    Serial.println("Error sending the message");
-    blink(led_error);
-  }
+  mqttClient.endMessage();
+  blink(led_mqtt);
 }
 
 void send_msg_mqtt(char *topic, char *msg) {
   Serial.println("Sending message");
   mqttClient.beginMessage(topic);
   mqttClient.print(msg);
-  int exit_code = mqttClient.endMessage();
-  if (exit_code = 0){
-    Serial.println("Sent");
-    blink(led_mqtt);
-  }
-  else{
-    Serial.println("Error sending the message");
-    blink(led_error);
-  }
-  
+  mqttClient.endMessage();
+  blink(led_mqtt);
 }
 
 void setup_bme280() {
@@ -143,9 +127,9 @@ void setup_bme280() {
 
 void blink(int x){
   digitalWrite(x, HIGH);
-  delay(1000);
+  delay(400);
   digitalWrite(x, LOW);
-  delay(1000);
+  delay(100);
 }
 
 void setup() {
@@ -162,7 +146,7 @@ void setup() {
 
   rtc.begin();
   rtc.setTime(hours, minutes, seconds);
-  rtc.setAlarmTime(0, 15, 0);
+  rtc.setAlarmTime(0, 15, 00);
   rtc.enableAlarm(rtc.MATCH_MMSS);
 
   rtc.attachInterrupt(alarmMatch);
@@ -177,7 +161,12 @@ void loop() {
       
       connect_wifi();
       if (connect_mqtt()){
-        send_metric_mqtt(topic = "tmp", bme.readTemperature());
+        bme.takeForcedMeasurement();
+//        delay(6000);
+//        blink(led_mqtt);
+        send_metric_mqtt("tmp", bme.readTemperature());
+        send_metric_mqtt("hum", bme.readHumidity());
+        send_metric_mqtt("pre", bme.readPressure() / 100.0F);
       }
       
       disconnect_mqtt();
@@ -192,8 +181,5 @@ void loop() {
 
 void alarmMatch()
 {
-  //send_metric_mqtt(topic = "tmp", bme.readTemperature());
-  //send_metric_mqtt(topic = "hum", bme.readHumidity());
-  //send_metric_mqtt(topic = "pre", bme.readPressure() / 100.0F);
   matched = true;
 }
